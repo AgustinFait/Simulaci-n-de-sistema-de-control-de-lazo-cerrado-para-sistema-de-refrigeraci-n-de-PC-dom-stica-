@@ -1,0 +1,1 @@
+# Simulaci-n-de-sistema-de-control-de-lazo-cerrado-para-sistema-de-refrigeraci-n-de-PC-dom-stica-
