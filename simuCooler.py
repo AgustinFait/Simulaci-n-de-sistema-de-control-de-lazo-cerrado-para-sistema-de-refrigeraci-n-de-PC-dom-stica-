@@ -31,6 +31,8 @@ state = {
     'errArr':        [],
     'pertArr':       [],
     'pwmArr':        [],
+    'pwmArr2':       [],   # salida del controlador (PWM)
+    'fbArr':         [],   # señal de retroalimentación T/20
     # carga aleatoria
     'cpu_actual':    20.0,
     'cpu_target':    20.0,
@@ -49,20 +51,22 @@ PERTURB_COLORS = ['#aaaaaa', '#2a78d6', '#e34948', '#eda100', '#1baf7a']
 # FIGURA
 # ==========================================
 
-fig = plt.figure(figsize=(17, 10))
+fig = plt.figure(figsize=(17, 12))
 fig.patch.set_facecolor('#f4f3ee')
 plt.suptitle('Control de Refrigeración PC — Simulación en tiempo real',
              fontsize=12, fontweight='bold', color='#222', y=0.99)
 
-gs_main = gridspec.GridSpec(4, 1, left=0.33, right=0.97,
-                             top=0.94, bottom=0.05, hspace=0.55)
+gs_main = gridspec.GridSpec(6, 1, left=0.33, right=0.97,
+                             top=0.94, bottom=0.05, hspace=0.85)
 
 ax0 = fig.add_subplot(gs_main[0])
 ax1 = fig.add_subplot(gs_main[1])
 ax2 = fig.add_subplot(gs_main[2])
 ax3 = fig.add_subplot(gs_main[3])
+ax4 = fig.add_subplot(gs_main[4])
+ax5 = fig.add_subplot(gs_main[5])
 
-CHART_AXES = [ax0, ax1, ax2, ax3]
+CHART_AXES = [ax0, ax1, ax2, ax3, ax4, ax5]
 for ax in CHART_AXES:
     ax.set_facecolor('#ffffff')
     ax.grid(True, color='#e0e0e0', linewidth=0.6, zorder=0)
@@ -73,12 +77,14 @@ ax0.set_title('θi(t) — Temperatura de referencia', fontsize=9, color='#444', 
 ax1.set_title('θo(t) — Temperatura real CPU', fontsize=9, color='#444', pad=3)
 ax2.set_title('e(t) — Señal de error  (θi − θo)', fontsize=9, color='#444', pad=3)
 ax3.set_title('CPU % / Perturbación activa', fontsize=9, color='#444', pad=3)
-ax3.set_xlabel('Tiempo (s)', fontsize=8)
+ax4.set_title('u(t) — Salida del controlador (PWM / RPM ventilador)', fontsize=9, color='#444', pad=3)
+ax5.set_title('y(t)/20 — Señal de retroalimentación', fontsize=9, color='#444', pad=3)
+ax5.set_xlabel('Tiempo (s)', fontsize=8)
 
 for ax in CHART_AXES:
     ax.tick_params(labelsize=8)
 
-# líneas
+# líneas originales
 line_ref,  = ax0.plot([], [], color='#2a78d6', lw=2, linestyle='--')
 line_temp, = ax1.plot([], [], color='#e34948', lw=2, label='θo(t)')
 line_ref2, = ax1.plot([], [], color='#2a78d6', lw=1.2, linestyle='--', alpha=0.5, label='θi(t)')
@@ -87,6 +93,21 @@ line_err,  = ax2.plot([], [], color='#4a3aa7', lw=2)
 ax2.axhline(0, color='#999', lw=0.8, linestyle='--')
 line_cpu,  = ax3.plot([], [], color='#e34948', lw=1.5, label='CPU %', zorder=3)
 bar_holder = {'bars': None}
+
+# líneas nuevas — ax4 PWM + RPM
+line_pwm, = ax4.plot([], [], color='#1baf7a', lw=2, label='PWM %')
+ax4_rpm   = ax4.twinx()
+line_rpm, = ax4_rpm.plot([], [], color='#888', lw=1.2, linestyle=':', label='RPM est.')
+ax4.legend(fontsize=8, loc='upper left')
+ax4_rpm.legend(fontsize=8, loc='upper right')
+ax4.set_ylabel('PWM %', fontsize=8)
+ax4_rpm.set_ylabel('RPM est.', fontsize=8, color='#888')
+ax4_rpm.tick_params(labelsize=8, labelcolor='#888')
+
+# líneas nuevas — ax5 retroalimentación
+line_fb, = ax5.plot([], [], color='#9b59b6', lw=2)
+ax5.axhline(0, color='#999', lw=0.8, linestyle='--')
+ax5.set_ylabel('T / 20', fontsize=8)
 
 # anotación perturbación activa
 ann_perturb = ax1.annotate('', xy=(0.98, 0.92), xycoords='axes fraction',
@@ -157,6 +178,25 @@ for btn in [btn_start, btn_stop, btn_reset]:
     btn.label.set_fontsize(9)
     btn.label.set_fontweight('bold')
 
+# --- Botones de perturbación manual ---
+fig.text(0.015, 0.210, 'DISPARAR PERTURBACIÓN', fontsize=7, color='#888',
+         style='italic', fontweight='bold')
+
+ax_p1 = fig.add_axes([0.015, 0.183, 0.125, 0.024])
+ax_p2 = fig.add_axes([0.150, 0.183, 0.125, 0.024])
+ax_p3 = fig.add_axes([0.015, 0.155, 0.125, 0.024])
+ax_p4 = fig.add_axes([0.150, 0.155, 0.125, 0.024])
+
+btn_p1 = Button(ax_p1, 'GPU/RAM',    color='#2a78d6', hovercolor='#1a5cb0')
+btn_p2 = Button(ax_p2, 'Embalamiento', color='#e34948', hovercolor='#b02e2e')
+btn_p3 = Button(ax_p3, 'Polvo',      color='#eda100', hovercolor='#c98500')
+btn_p4 = Button(ax_p4, 'Ruido elec.', color='#1baf7a', hovercolor='#138a5a')
+
+for btn in [btn_p1, btn_p2, btn_p3, btn_p4]:
+    btn.label.set_color('white')
+    btn.label.set_fontsize(7.5)
+    btn.label.set_fontweight('bold')
+
 # ==========================================
 # LEYENDA DE PERTURBACIONES
 # ==========================================
@@ -164,15 +204,15 @@ for btn in [btn_start, btn_stop, btn_reset]:
 fig.text(0.015, 0.220, 'PERTURBACIONES', fontsize=7, color='#888',
          style='italic', fontweight='bold')
 for i, (lbl, col) in enumerate(zip(PERTURB_LABELS, PERTURB_COLORS)):
-    fig.text(0.018, 0.201 - i*0.022, '■', fontsize=10, color=col, va='top')
-    fig.text(0.038, 0.203 - i*0.022, lbl, fontsize=7.5, color='#444', va='top')
+    fig.text(0.018, 0.109 - i*0.022, '■', fontsize=10, color=col, va='top')
+    fig.text(0.038, 0.111 - i*0.022, lbl, fontsize=7.5, color='#444', va='top')
 
 # indicador de estado
-status_text  = fig.text(0.015, 0.085, '[ ] Detenido', fontsize=9,
+status_text  = fig.text(0.015, 0.048, '[ ] Detenido', fontsize=9,
                          color='#aaa', fontweight='bold', va='top')
-cpu_text     = fig.text(0.015, 0.060, 'CPU: – %',          fontsize=8, color='#444', va='top')
-perturb_text = fig.text(0.015, 0.040, 'Perturbación: Normal', fontsize=8, color='#444', va='top')
-temp_text    = fig.text(0.015, 0.020, 'T CPU: – °C',       fontsize=8, color='#444', va='top')
+cpu_text     = fig.text(0.015, 0.034, 'CPU: – %',             fontsize=8, color='#444', va='top')
+perturb_text = fig.text(0.015, 0.020, 'Perturbación: Normal', fontsize=8, color='#444', va='top')
+temp_text    = fig.text(0.015, 0.006, 'T CPU: – °C',          fontsize=8, color='#444', va='top')
 
 # ==========================================
 # LÓGICA DE SIMULACIÓN
@@ -209,13 +249,13 @@ def step():
     tau     = sl_tau.val
     inten   = sl_perturb_int.val
 
-    t   = state['t']
-    T   = state['T']
+    t = state['t']
+    T = state['T']
 
-# Detección de falla térmica
+    # Detección de falla térmica
     if T > 95 or T < 20:
-        state['running'] = False
-        state['fault'] = True
+        state['running']  = False
+        state['fault']    = True
         state['fault_msg'] = 'Falla térmica  —  T > 95 °C' if T > 95 else 'Falla térmica  —  T < 20 °C'
 
     # CPU aleatorio — suavizado
@@ -237,54 +277,50 @@ def step():
     eficiencia = 1.0
     extra      = 0.0
 
-    if perturb == 1:   
+    if perturb == 1:
         T_amb = T_amb_b + 10 + inten*17
-    elif perturb == 2: 
+    elif perturb == 2:
         T_amb = T_amb_b + 8 + inten*17
-    elif perturb == 3: 
+    elif perturb == 3:
         eficiencia = max(0.3, 0.85 - inten*0.55)
     elif perturb == 4:
         T = T + (1 + inten*3)
 
-    # ── Controlador PD ──────────────────────────────────────────
+    # ── Controlador PD ───────────────────────────────────────────────────
     error    = T_ref - T
-    derivada = T - state['T_ant'] 
+    derivada = T - state['T_ant']
 
-
-    PWM = state['PWM'] + Kp * (-error) + Kd * derivada
+    PWM = sl_pwm0.val + Kp * (-error) + Kd * derivada
     PWM = float(np.clip(PWM, 20, 100))
 
-    # ── Modelo térmico con inercia (τ) ────────────────────────────────────
+    # ── Modelo térmico con inercia (τ) ───────────────────────────────────
     calor    = G_CAL  * cpu
     disipado = G_COOL * PWM * eficiencia
     amb_inf  = 0.02 * (T_amb - T)
     delta    = calor - disipado + amb_inf + extra
-    
+
     T_ant = T
     T    += tau * delta
 
-    
-    state['t']           = t + 1
-    state['T']           = T
-    state['PWM']         = PWM
-    state['T_ant']       = T_ant
+    state['t']     = t + 1
+    state['T']     = T
+    state['PWM']   = PWM
+    state['T_ant'] = T_ant
 
-    state['tArr'].append(t)
-    state['refArr'].append(round(T_ref, 1))
-    state['tempArr'].append(round(T, 2))
-    state['errArr'].append(round(abs(error), 2))
-    state['pertArr'].append(perturb)
-    state['pwmArr'].append(round(cpu, 1))
-
-    # ── Cortamos los valores para no sobrecargar la memoria ────────────────────────────────────
-
-    state['tArr'] = state['tArr'][-TIEMPO_VENTANA:]
-    state['refArr'] = state['refArr'][-TIEMPO_VENTANA:]
-    state['tempArr'] = state['tempArr'][-TIEMPO_VENTANA:]
-    state['errArr'] = state['errArr'][-TIEMPO_VENTANA:]
-    state['pertArr'] = state['pertArr'][-TIEMPO_VENTANA:]
-    state['pwmArr'] = state['pwmArr'][-TIEMPO_VENTANA:]
-    
+    # appends con límite de memoria
+    for arr, val in [
+        ('tArr',    t),
+        ('refArr',  round(T_ref, 1)),
+        ('tempArr', round(T, 2)),
+        ('errArr',  round(abs(error), 2)),
+        ('pertArr', perturb),
+        ('pwmArr',  round(cpu, 1)),
+        ('pwmArr2', round(PWM, 1)),
+        ('fbArr',   round(T / 20, 4)),
+    ]:
+        state[arr].append(val)
+        if len(state[arr]) > TIEMPO_VENTANA:
+            state[arr].pop(0)
 
 # ==========================================
 # UPDATE GRÁFICOS
@@ -297,6 +333,8 @@ def redraw(_=None):
     eArr = state['errArr']
     pArr = state['pertArr']
     cArr = state['pwmArr']
+    pwArr = state['pwmArr2']
+    fbArr = state['fbArr']
 
     if not tA:
         return
@@ -305,13 +343,15 @@ def redraw(_=None):
     t_lo  = max(0, t_now - TIEMPO_VENTANA)
     t_hi  = t_now + 5
 
-    idx0 = max(0, len(tA) - TIEMPO_VENTANA)
-    tSl  = tA[idx0:]
-    rSl  = tRef[idx0:]
-    oSl  = tObs[idx0:]
-    eSl  = eArr[idx0:]
-    pSl  = pArr[idx0:]
-    cSl  = cArr[idx0:]
+    idx0  = max(0, len(tA) - TIEMPO_VENTANA)
+    tSl   = tA[idx0:]
+    rSl   = tRef[idx0:]
+    oSl   = tObs[idx0:]
+    eSl   = eArr[idx0:]
+    pSl   = pArr[idx0:]
+    cSl   = cArr[idx0:]
+    pwSl  = pwArr[idx0:]
+    fbSl  = fbArr[idx0:]
 
     T_ref = sl_tref.val
 
@@ -360,6 +400,28 @@ def redraw(_=None):
     ax3.set_ylim(0, 105)
     ax3.set_ylabel('CPU %', fontsize=8)
 
+    # ax4 — salida controlador PWM + RPM estimadas
+    line_pwm.set_data(tSl, pwSl)
+    if pwSl:
+        rpm_est = [p * 30 for p in pwSl]   # 20% → 600 RPM, 100% → 3000 RPM
+        line_rpm.set_data(tSl, rpm_est)
+        ax4_rpm.set_ylim(0, 3200)
+    ax4.set_xlim(t_lo, t_hi)
+    ax4.set_ylim(15, 105)
+
+    # ax5 — retroalimentación T/20
+    line_fb.set_data(tSl, fbSl)
+    ax5.set_xlim(t_lo, t_hi)
+    if fbSl:
+        mn, mx = min(fbSl), max(fbSl)
+        pad = max(0.5, (mx - mn)*0.2)
+        ax5.set_ylim(mn - pad, mx + pad)
+    for coll in ax5.collections[:]:
+        coll.remove()
+    if fbSl:
+        ax5.fill_between(tSl, fbSl, min(fbSl),
+                         alpha=0.12, color='#9b59b6')
+
     # anotación perturbación
     p_now = pArr[-1] if pArr else 0
     ann_perturb.set_text(f'  {PERTURB_LABELS[p_now]}  ')
@@ -379,13 +441,11 @@ def redraw(_=None):
 
     if state.get('fault'):
         ax1.set_title(state['fault_msg'], fontsize=11, color='#e34948',
-                    fontweight='bold', pad=5)
+                      fontweight='bold', pad=5)
         status_text.set_text('[!] FALLA TÉRMICA')
         status_text.set_color('#e34948')
-    
+
     fig.canvas.draw_idle()
-
-
 
 
 def on_timer():
@@ -424,24 +484,38 @@ def reset(event):
     state['errArr'].clear()
     state['pertArr'].clear()
     state['pwmArr'].clear()
+    state['pwmArr2'].clear()
+    state['fbArr'].clear()
     state['cpu_actual']    = 20.0
     state['cpu_target']    = 20.0
     state['perturb']       = 0
     state['perturb_timer'] = 0
     state['perturb_cd']    = 0
-    state['fault'] = False
-    state['fault_msg'] = ''
+    state['fault']         = False
+    state['fault_msg']     = ''
     ax1.set_title('θo(t) — Temperatura real CPU', fontsize=9, color='#444', pad=3)
-    
     for ax in CHART_AXES:
         for coll in ax.collections:
             coll.remove()
     bar_holder['bars'] = None
-    for line in [line_ref, line_temp, line_ref2, line_err, line_cpu]:
+    for line in [line_ref, line_temp, line_ref2, line_err, line_cpu,
+                 line_pwm, line_rpm, line_fb]:
         line.set_data([], [])
     status_text.set_text('[ ] Detenido')
     status_text.set_color('#aaa')
     fig.canvas.draw_idle()
+
+def disparar_perturb(p_id):
+    inten = sl_perturb_int.val
+    dur   = int(np.random.uniform(20, 60 + inten*80))
+    state['perturb']       = p_id
+    state['perturb_timer'] = dur
+    state['perturb_cd']    = dur + int(np.random.uniform(30, 80))
+
+btn_p1.on_clicked(lambda e: disparar_perturb(1))
+btn_p2.on_clicked(lambda e: disparar_perturb(2))
+btn_p3.on_clicked(lambda e: disparar_perturb(3))
+btn_p4.on_clicked(lambda e: disparar_perturb(4))
 
 btn_start.on_clicked(start)
 btn_stop.on_clicked(stop)
