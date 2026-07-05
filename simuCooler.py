@@ -78,7 +78,7 @@ ax1.set_title('θo(t) — Temperatura real CPU', fontsize=9, color='#444', pad=3
 ax2.set_title('e(t) — Señal de error  (θi − θo)', fontsize=9, color='#444', pad=3)
 ax3.set_title('CPU % / Perturbación activa', fontsize=9, color='#444', pad=3)
 ax4.set_title('u(t) — Salida del controlador (PWM / RPM ventilador)', fontsize=9, color='#444', pad=3)
-ax5.set_title('y(t)/20 — Señal de retroalimentación', fontsize=9, color='#444', pad=3)
+ax5.set_title('f(t) — Señal de retroalimentación', fontsize=9, color='#444', pad=3)
 ax5.set_xlabel('Tiempo (s)', fontsize=8)
 
 for ax in CHART_AXES:
@@ -107,7 +107,7 @@ ax4_rpm.tick_params(labelsize=8, labelcolor='#888')
 # líneas nuevas — ax5 retroalimentación
 line_fb, = ax5.plot([], [], color='#9b59b6', lw=2)
 ax5.axhline(0, color='#999', lw=0.8, linestyle='--')
-ax5.set_ylabel('T / 20', fontsize=8)
+ax5.set_ylabel('f(t)', fontsize=8)
 
 # anotación perturbación activa
 ann_perturb = ax1.annotate('', xy=(0.98, 0.92), xycoords='axes fraction',
@@ -251,6 +251,7 @@ def step():
 
     t = state['t']
     T = state['T']
+    T_medida = T
 
     # Detección de falla térmica
     if T > 95 or T < 20:
@@ -260,8 +261,9 @@ def step():
 
     # CPU aleatorio — suavizado
     var = sl_cpu_var.val
-    if t % max(1, int(30 - var*25)) == 0:
-        state['cpu_target'] = next_cpu_target()
+    if(var > 0):
+        if t % max(1, int(30 - var*25)) == 0:
+            state['cpu_target'] = next_cpu_target()
     state['cpu_actual'] += (state['cpu_target'] - state['cpu_actual']) * 0.08
     cpu = state['cpu_actual']
 
@@ -284,13 +286,13 @@ def step():
     elif perturb == 3:
         eficiencia = max(0.3, 0.85 - inten*0.55)
     elif perturb == 4:
-        T = T + (1 + inten*3)
+        T_medida = T_medida + (1 + inten*3)
 
     # ── Controlador PD ───────────────────────────────────────────────────
-    error    = T_ref - T
-    derivada = T - state['T_ant']
+    error    = T_ref - T_medida
+    derivada = T_medida - state['T_ant']
 
-    PWM = sl_pwm0.val + Kp * (-error) + Kd * derivada
+    PWM = state['PWM'] + Kp * (-error) + Kd * derivada
     PWM = float(np.clip(PWM, 20, 100))
 
     # ── Modelo térmico con inercia (τ) ───────────────────────────────────
@@ -299,7 +301,7 @@ def step():
     amb_inf  = 0.02 * (T_amb - T)
     delta    = calor - disipado + amb_inf + extra
 
-    T_ant = T
+    T_ant = T_medida
     T    += tau * delta
 
     state['t']     = t + 1
@@ -374,7 +376,7 @@ def redraw(_=None):
     ax2.set_xlim(t_lo, t_hi)
     if eSl:
         em = max(5, max(abs(e) for e in eSl))
-        ax2.set_ylim(-em - 2, em + 2)
+        ax2.set_ylim(0, em + 2)
     for coll in ax2.collections[:]:
         coll.remove()
     if eSl:
@@ -409,7 +411,7 @@ def redraw(_=None):
     ax4.set_xlim(t_lo, t_hi)
     ax4.set_ylim(15, 105)
 
-    # ax5 — retroalimentación T/20
+    # ax5 — retroalimentación
     line_fb.set_data(tSl, fbSl)
     ax5.set_xlim(t_lo, t_hi)
     if fbSl:
@@ -418,9 +420,9 @@ def redraw(_=None):
         ax5.set_ylim(mn - pad, mx + pad)
     for coll in ax5.collections[:]:
         coll.remove()
-    if fbSl:
-        ax5.fill_between(tSl, fbSl, min(fbSl),
-                         alpha=0.12, color='#9b59b6')
+    # if fbSl:
+    #     ax5.fill_between(tSl, fbSl, min(fbSl),
+    #                      alpha=0.12, color='#9b59b6')
 
     # anotación perturbación
     p_now = pArr[-1] if pArr else 0
